@@ -90,10 +90,8 @@ class ScreenViewer(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.text = '一二三四五'
-        self.setWindowTitle('Draw text')
-        self.setStyleSheet("background-color:black;")
-        self.setWindowOpacity(0.1)
+        self.setWindowTitle('DPT-S1 viewer')
+        self.setStyleSheet("background-color:white;")
         self.showFullScreen()
 
     def paintEvent(self, event):
