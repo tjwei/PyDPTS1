@@ -1,17 +1,20 @@
 "DPT-S1 screen viewer"
 import asyncio
-import socket
-import sys
+import ctypes
 import queue
+import socket
+import subprocess
+import sys
 from io import BytesIO
 from time import sleep
 
 import numpy as np
 from PIL import Image
 from PyQt5 import QtCore
-from PyQt5.QtCore import QRectF, Qt
+from PyQt5.QtCore import QEvent, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter
 from PyQt5.QtWidgets import QApplication, QWidget
+
 
 def read_data(addr):
     "read data from DPT-S1"
@@ -94,6 +97,12 @@ class ScreenViewer(QWidget):
         self.setStyleSheet("background-color: #f8fdf7;")
         self.showFullScreen()
         self.img = None
+        # attempt to disable screen saver
+        # winid_ptr = self.winId()
+        # ctypes.pythonapi.PyCapsule_GetPointer.restype = ctypes.c_void_p
+        # ctypes.pythonapi.PyCapsule_GetPointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
+        # winid = ctypes.pythonapi.PyCapsule_GetPointer(winid_ptr.ascapsule(), None)
+        # subprocess.call(['xdg-screensaver', 'suspend', str(winid)])
 
     def paintEvent(self, event):
         try:
@@ -114,6 +123,11 @@ class ScreenViewer(QWidget):
                 rect = QRectF((w-w2)/2, 0, w2, h)
             qp.drawImage(rect, qimg)
         qp.end()
+        # attempt to disable screen saver
+        #kevent = QKeyEvent(QEvent.KeyPress, Qt.Key_Enter, Qt.NoModifier)
+        #QApplication.postEvent(self, kevent)
+        #kevent = QKeyEvent(QEvent.KeyRelease, Qt.Key_Enter, Qt.NoModifier)
+        #QApplication.postEvent(self, kevent)
 
 def main():
     ip = find_device_ip()
