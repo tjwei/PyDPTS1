@@ -2,6 +2,7 @@
 import asyncio
 import socket
 import sys
+import queue
 from io import BytesIO
 from time import sleep
 
@@ -11,7 +12,6 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter
 from PyQt5.QtWidgets import QApplication, QWidget
-
 
 def read_data(addr):
     "read data from DPT-S1"
@@ -24,14 +24,12 @@ def read_data(addr):
     conn.close()
     return data
 
-
-
-end_tag = b"</command>\n"
+END_TAG = b"</command>\n"
 
 def read_img(addr):
     "read screen image from DPT-S1"
     b = read_data(addr)
-    end_loc = b.find(end_tag) + len(end_tag)
+    end_loc = b.find(END_TAG) + len(END_TAG)
     if end_loc < 0:
         return None
     head = b[:end_loc]
@@ -42,7 +40,7 @@ def read_img(addr):
     im = Image.open(bio)
     im = np.array(im)
     if b'portrait' in head:
-        im = im[150:-100, 66:, :]
+        im = im[150:-100, 68:, :]
     else:
         im = im[68:, 20:-95, :]
         im = im[:, ::-1, :].swapaxes(0, 1)
@@ -67,17 +65,18 @@ def find_device_ip():
 
 class Thread(QtCore.QThread):
     trigger = QtCore.pyqtSignal(int)
-    def __init__(self, ip):
+    def __init__(self, ip, img_queue):
         self.ip = ip
         QtCore.QThread.__init__(self)
+        self.img_queue = img_queue
     def timer_func(self):
-        global nimg
+        if not self.img_queue.empty():
+            return
         img = read_img(self.ip)
         if img is not None:
-            nimg = img
+            self.img_queue.put(img)
             self.trigger.emit(0)
     def run(self):
-        print("Thread works")
         timer = QtCore.QTimer()
         timer.timeout.connect(self.timer_func)
         timer.start(1000)
@@ -85,31 +84,36 @@ class Thread(QtCore.QThread):
 
 class ScreenViewer(QWidget):
     "main widget"
-    def __init__(self):
+    def __init__(self, img_queue):
         super().__init__()
         self.initUI()
+        self.img_queue = img_queue
 
     def initUI(self):
         self.setWindowTitle('DPT-S1 viewer')
-        self.setStyleSheet("background-color:white;")
+        self.setStyleSheet("background-color: #f8fdf7;")
         self.showFullScreen()
+        self.img = None
 
     def paintEvent(self, event):
+        try:
+            self.img = im = self.img_queue.get_nowait()
+        except queue.Empty:
+            im = self.img
         qp = QPainter()
-        im = nimg
-        qimg = QImage(im.data, im.shape[1], im.shape[0], im.strides[0], QImage.Format_RGB888)
-        w, h = self.width(), self.height()
-        iw, ih = qimg.width(), qimg.height()
-        if w/h < iw/ih:
-            h2 = ih*w/iw
-            rect = QRectF(0, (h-h2)/2, w, h2)
-        else:
-            w2 = iw * h / ih
-            rect = QRectF((w-w2)/2, 0, w2, h)
         qp.begin(self)
-        qp.drawImage(rect, qimg)
+        if im is not None:
+            qimg = QImage(im.data, im.shape[1], im.shape[0], im.strides[0], QImage.Format_RGB888)
+            w, h = self.width(), self.height()
+            iw, ih = qimg.width(), qimg.height()
+            if w/h < iw/ih:
+                h2 = ih*w/iw
+                rect = QRectF(0, (h-h2)/2, w, h2)
+            else:
+                w2 = iw * h / ih
+                rect = QRectF((w-w2)/2, 0, w2, h)
+            qp.drawImage(rect, qimg)
         qp.end()
-
 
 def main():
     ip = find_device_ip()
@@ -117,13 +121,11 @@ def main():
         print("cannot find the device")
         sys.exit(-1)
     print("ip="+ip)
-    nimg = read_img(ip)
-    if nimg is None:
-        sys.exit(1)
+    img_queue = queue.Queue()
     app = QApplication(sys.argv)
-    thread_instance = Thread(ip)
+    thread_instance = Thread(ip, img_queue)
     thread_instance.start()
-    viewer = ScreenViewer()
+    viewer = ScreenViewer(img_queue)
     thread_instance.trigger.connect(viewer.repaint)
     app.exec_()
     thread_instance.exit()
